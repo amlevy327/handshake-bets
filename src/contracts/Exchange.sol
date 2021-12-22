@@ -14,13 +14,14 @@ contract Exchange is Ownable {
 
   mapping(address => mapping(address => uint256)) public tokens;
   mapping(uint256 => _Bet) public bets;
-  mapping(uint256 => bool) public betCancelled;
-  mapping(uint256 => bool) public betAccepted;
-  mapping(uint256 => bool) public betClosed;
+  mapping(uint256 => bool) public cancelled;
+  mapping(uint256 => bool) public accepted;
+  mapping(uint256 => bool) public closed;
 
   event Deposit(address token, address user, uint256 amount, uint256 balance);
   event Withdraw(address token, address user, uint256 amount, uint256 balance);
   event BetCreated(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
+  event BetCancelled(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
 
   struct _Bet {
     uint256 id;
@@ -71,5 +72,20 @@ contract Exchange is Ownable {
     bets[_betCount.current()] = _Bet(_betCount.current(), _token, msg.sender, _taker, _amountMaker, _amountTaker, depositAmount, false, ADDRESS_0X0, ADDRESS_0X0, block.timestamp);
 
     emit BetCreated(_betCount.current(), _token, msg.sender, _taker, _amountMaker, _amountTaker, depositAmount, false, ADDRESS_0X0, ADDRESS_0X0, block.timestamp);
+  }
+
+  function cancelBet(uint256 _id) public {
+    _Bet storage _bet = bets[_id];
+    require(_id == _bet.id);
+    require(msg.sender == address(_bet.maker));
+    require(cancelled[_id] == false, 'bet already cancelled');
+    require(accepted[_id] == false, 'bet already accepted');
+    
+    cancelled[_id] = true;
+
+    tokens[_bet.token][msg.sender] += (_bet.amountMaker + _bet.amountDeposit); // options: add fees or keep deposit
+    tokens[_bet.token][address(this)] -= (_bet.amountMaker + _bet.amountDeposit);
+
+    emit BetCancelled(_betCount.current(), _bet.token, _bet.maker, _bet.taker, _bet.amountMaker, _bet.amountTaker, _bet.amountDeposit, _bet.accepted, _bet.winnerMaker, _bet.winnerTaker, block.timestamp);
   }
 }
