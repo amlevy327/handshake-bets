@@ -6,11 +6,12 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 import './Token.sol';
 
 contract Exchange is Ownable {
+  using Counters for Counters.Counter;
+  Counters.Counter private _betCount;
 
   uint256 public depositAmount; // returned after bet closed - incentive to close bet
-  address constant ETHER = address(0); // store Ether in tokens mapping with blank address
-  
-  uint256 betCount;
+  address constant ADDRESS_0X0 = address(0); // store Ether in tokens mapping with blank address
+
   mapping(address => mapping(address => uint256)) public tokens;
   mapping(uint256 => _Bet) public bets;
   mapping(uint256 => bool) public betCancelled;
@@ -19,14 +20,16 @@ contract Exchange is Ownable {
 
   event Deposit(address token, address user, uint256 amount, uint256 balance);
   event Withdraw(address token, address user, uint256 amount, uint256 balance);
+  event BetCreated(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
 
   struct _Bet {
     uint256 id;
+    address token;
     address maker;
     address taker;
     uint256 amountMaker;
     uint256 amountTaker;
-    bool specificAddress;
+    uint256 amountDeposit;
     bool accepted;
     address winnerMaker;
     address winnerTaker;
@@ -39,21 +42,34 @@ contract Exchange is Ownable {
 
 
   function depositToken(address _token, uint256 _amount) public {
-      require(_token != ETHER);
-      require(Token(_token).transferFrom(msg.sender, address(this), _amount));
-      tokens[_token][msg.sender] = tokens[_token][msg.sender] + _amount;
-      emit Deposit(_token, msg.sender, _amount, tokens[_token][msg.sender]);
+    require(_token != ADDRESS_0X0);
+    require(Token(_token).transferFrom(msg.sender, address(this), _amount));
+    tokens[_token][msg.sender] = tokens[_token][msg.sender] + _amount;
+    emit Deposit(_token, msg.sender, _amount, tokens[_token][msg.sender]);
   }
 
   function withdrawToken(address _token, uint256 _amount) public {
-      require(_token != ETHER);
-      require(tokens[_token][msg.sender] >= _amount);
-      tokens[_token][msg.sender] = tokens[_token][msg.sender] - _amount;
-      require(Token(_token).transfer(msg.sender, _amount));
-      emit Withdraw(_token, msg.sender, _amount, tokens[_token][msg.sender]);
+    require(_token != ADDRESS_0X0);
+    require(tokens[_token][msg.sender] >= _amount);
+    tokens[_token][msg.sender] = tokens[_token][msg.sender] - _amount;
+    require(Token(_token).transfer(msg.sender, _amount));
+    emit Withdraw(_token, msg.sender, _amount, tokens[_token][msg.sender]);
   }
 
   function balanceOf(address _token, address _user) public view returns(uint256 _balance) {
       return tokens[_token][_user];
+  }
+  
+  function createBet(address _token, address _taker, uint256 _amountMaker, uint256 _amountTaker) public {
+    require(msg.sender != _taker, 'taker cannot be sender');
+    require(tokens[_token][msg.sender] >= (_amountMaker + depositAmount), 'insufficent balance');
+
+    tokens[_token][msg.sender] -= (_amountMaker + depositAmount);
+    tokens[_token][address(this)] += (_amountMaker + depositAmount);
+
+    _betCount.increment();
+    bets[_betCount.current()] = _Bet(_betCount.current(), _token, msg.sender, _taker, _amountMaker, _amountTaker, depositAmount, false, ADDRESS_0X0, ADDRESS_0X0, block.timestamp);
+
+    emit BetCreated(_betCount.current(), _token, msg.sender, _taker, _amountMaker, _amountTaker, depositAmount, false, ADDRESS_0X0, ADDRESS_0X0, block.timestamp);
   }
 }
