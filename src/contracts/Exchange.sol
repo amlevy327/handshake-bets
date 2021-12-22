@@ -10,7 +10,7 @@ contract Exchange is Ownable {
   Counters.Counter private _betCount;
 
   uint256 public depositAmount; // returned after bet closed - incentive to close bet
-  address constant ADDRESS_0X0 = address(0); // store Ether in tokens mapping with blank address
+  address constant ADDRESS_0X0 = address(0); // blank address
 
   mapping(address => mapping(address => uint256)) public tokens;
   mapping(uint256 => _Bet) public bets;
@@ -22,6 +22,7 @@ contract Exchange is Ownable {
   event Withdraw(address token, address user, uint256 amount, uint256 balance);
   event BetCreated(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
   event BetCancelled(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
+  event BetAccepted(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
 
   struct _Bet {
     uint256 id;
@@ -31,7 +32,7 @@ contract Exchange is Ownable {
     uint256 amountMaker;
     uint256 amountTaker;
     uint256 amountDeposit;
-    bool accepted;
+    bool accepted; // TODOO: remove this
     address winnerMaker;
     address winnerTaker;
     uint256 timestamp;
@@ -76,7 +77,7 @@ contract Exchange is Ownable {
 
   function cancelBet(uint256 _id) public {
     _Bet storage _bet = bets[_id];
-    require(_id == _bet.id);
+    require(_id == _bet.id, 'bet does not exist');
     require(msg.sender == address(_bet.maker));
     require(cancelled[_id] == false, 'bet already cancelled');
     require(accepted[_id] == false, 'bet already accepted');
@@ -86,6 +87,24 @@ contract Exchange is Ownable {
     tokens[_bet.token][msg.sender] += (_bet.amountMaker + _bet.amountDeposit); // options: add fees or keep deposit
     tokens[_bet.token][address(this)] -= (_bet.amountMaker + _bet.amountDeposit);
 
-    emit BetCancelled(_betCount.current(), _bet.token, _bet.maker, _bet.taker, _bet.amountMaker, _bet.amountTaker, _bet.amountDeposit, _bet.accepted, _bet.winnerMaker, _bet.winnerTaker, block.timestamp);
+    emit BetCancelled(_bet.id, _bet.token, _bet.maker, _bet.taker, _bet.amountMaker, _bet.amountTaker, _bet.amountDeposit, _bet.accepted, _bet.winnerMaker, _bet.winnerTaker, block.timestamp);
+  }
+
+  function acceptBet(uint256 _id) public {
+    _Bet storage _bet = bets[_id];
+    require(_id == _bet.id, 'bet does not exist');
+    require(accepted[_id] == false, 'bet already accepted');
+    require(cancelled[_id] == false, 'bet already cancelled');
+    require(tokens[_bet.token][msg.sender] >= (_bet.amountTaker + _bet.amountDeposit), 'insufficent balance');
+    require(_bet.taker == ADDRESS_0X0 || _bet.taker == msg.sender, 'taker address error');
+
+    if (_bet.taker == ADDRESS_0X0) {
+      _bet.taker = msg.sender;
+    }
+
+    tokens[_bet.token][msg.sender] -= (_bet.amountTaker + _bet.amountDeposit);
+    tokens[_bet.token][address(this)] += (_bet.amountTaker + _bet.amountDeposit);
+    accepted[_id] = true;
+    emit BetAccepted(_bet.id, _bet.token, _bet.maker, msg.sender, _bet.amountMaker, _bet.amountTaker, _bet.amountDeposit, _bet.accepted, _bet.winnerMaker, _bet.winnerTaker, block.timestamp);
   }
 }
