@@ -157,7 +157,6 @@ contract('Exchange', ([deployer, user1, user2]) => {
       })
 
       it('bet created with _taker as user', async () => {
-        //result = await exchange.createBet(token.address, user2, amountMaker, amountTaker, { from: user1 })
         const bet = await exchange.bets('1')
         bet.id.toString().should.equal('1', 'id is correct')
         bet.token.toString().should.equal(token.address.toString(), 'token address is correct')
@@ -190,12 +189,12 @@ contract('Exchange', ([deployer, user1, user2]) => {
 
       it('tracks contract balance', async () => {
         balance = await exchange.tokens(token.address, exchange.address)
-        balance.toString().should.equal((amountMaker + depositAmount).toString())
+        balance.toString().should.equal((amountMaker + depositAmount).toString(), 'contract balance is correct')
       })
 
       it('tracks user balance', async () => {
         balance = await exchange.tokens(token.address, user1)
-        balance.toString().should.equal((amountTransfer - (amountMaker + depositAmount)).toString())
+        balance.toString().should.equal((amountTransfer - (amountMaker + depositAmount)).toString(), 'user balance is correct')
       })
 
       it('bet created with _taker as 0x0', async () => {
@@ -221,6 +220,79 @@ contract('Exchange', ([deployer, user1, user2]) => {
 
       it('rejects if insufficient balance', async () => {
         await exchange.createBet(token.address, user2, '1000', amountTaker, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
+      })
+    })
+  })
+
+  describe('Cancel bet', () => {
+    let result
+    let amountTransfer = 30
+    let amountMaker = 10
+    let amountTaker = 8
+    let depositAmount = DEPOSIT
+
+    beforeEach(async () => {
+      amountTransfer = 30
+      // deposit
+      await token.approve(exchange.address, amountTransfer, { from: user1 })
+      await exchange.depositToken(token.address, amountTransfer, { from: user1 })
+      await exchange.createBet(token.address, user2, amountMaker, amountTaker, { from: user1 })
+    })
+
+    describe('Success', () => {
+      beforeEach(async () => {
+        result = await exchange.cancelBet('1', { from: user1 })
+      })
+
+      it('bet cancelled', async () => {
+        const betCancelledStatus = await exchange.cancelled('1')
+        betCancelledStatus.should.equal(true, 'status is correct')
+      })
+
+      it('emits a BetCancelled event', async () => {
+        expectEvent(
+          result,
+          'BetCancelled',
+          { id: '1',
+            token: token.address, 
+            maker: user1.toString(),
+            taker: user2.toString(),
+            amountMaker: amountMaker.toString(),
+            amountTaker: amountTaker.toString(),
+            depositAmount: DEPOSIT.toString(),
+            accepted: false,
+            winnerMaker: ADDRESS_0x0,
+            winnerTaker: ADDRESS_0x0
+          })
+      })
+
+      it('tracks contract balance', async () => {
+        balance = await exchange.tokens(token.address, exchange.address)
+        balance.toString().should.equal('0', 'contract balance is correct')
+      })
+
+      it('tracks user balance', async () => {
+        balance = await exchange.tokens(token.address, user1)
+        balance.toString().should.equal(amountTransfer.toString(), 'user balance is correct')
+      })
+    })
+  
+    describe('Failure', () => {
+      it('rejects if id does not exist', async () => {
+        result = await exchange.cancelBet('100', { from: user1 }).should.be.rejectedWith(EVM_REVERT)
+      })
+
+      it('rejects if sender is not maker', async () => {
+        result = await exchange.cancelBet('1', { from: user2 }).should.be.rejectedWith(EVM_REVERT)
+      })
+
+      // TODO: ADD ACCEPTED FUNCTION
+      // it('rejects if already accepted', async () => {
+      // })
+
+      it('rejects if already cancelled', async () => {
+        await exchange.cancelBet('1', { from: user1 })
+        result = await exchange.cancelBet('1', { from: user1 }).should.be.rejectedWith(EVM_REVERT)
       })
     })
   })
