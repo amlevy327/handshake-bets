@@ -93,66 +93,134 @@ contract('Exchange', ([deployer, user1, user2]) => {
       })
     })
 
-    describe('Withdraw tokens', () => {
-      let result
-      let depositAmount
-      let withdrawAmount
-      let balance
-
-      beforeEach(async () => {
-        depositAmount = 30
-        withdrawAmount = 10
-        // deposit
-        await token.approve(exchange.address, depositAmount, { from: user1 })
-        await exchange.depositToken(token.address, depositAmount, { from: user1 })
-      })
-  
-      describe('Success', () => {
-        beforeEach(async ()=> {
-          // withdraw
-          result = await exchange.withdrawToken(token.address, withdrawAmount, { from: user1 })
-        })
-  
-        it('tracks the token withdraw', async () => {
-          balance = await exchange.tokens(token.address, user1)
-          balance.toString().should.equal((depositAmount - withdrawAmount).toString())
-        })
-  
-        it('emits a Withdraw event', async () => {
-          expectEvent(result, 'Withdraw', { token: token.address, user: user1, amount: withdrawAmount.toString(), balance: balance.toString()})
-        })
-      })
-  
-      describe('Failure', () => {
-        it('rejects ether withdraw', async () => {
-          // withdraw
-          await exchange.withdrawToken(ADDRESS_0x0, withdrawAmount, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
-        })
-  
-        it('rejects withdraw with insuffient balance', async () => {
-          // withdraw
-          await exchange.withdrawToken(token.address, 1000, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
-        })
-      })
-    })
-  })
-
-  describe('Checking balance', () => {
-    let amount
+  describe('Withdraw tokens', () => {
+    let result
+    let depositAmount
+    let withdrawAmount
     let balance
 
     beforeEach(async () => {
-      amount = 30
+      depositAmount = 30
+      withdrawAmount = 10
       // deposit
-      await token.approve(exchange.address, amount, { from: user1 })
-      await exchange.depositToken(token.address, amount, { from: user1 })
+      await token.approve(exchange.address, depositAmount, { from: user1 })
+      await exchange.depositToken(token.address, depositAmount, { from: user1 })
     })
 
     describe('Success', () => {
-      it('returns user balance', async () => {
-        // check tokens on exchange
-        balance = await exchange.balanceOf(token.address, user1)
-        balance.toString().should.equal(amount.toString())
+      beforeEach(async ()=> {
+        // withdraw
+        result = await exchange.withdrawToken(token.address, withdrawAmount, { from: user1 })
+      })
+
+      it('tracks the token withdraw', async () => {
+        balance = await exchange.tokens(token.address, user1)
+        balance.toString().should.equal((depositAmount - withdrawAmount).toString())
+      })
+
+      it('emits a Withdraw event', async () => {
+        expectEvent(result, 'Withdraw', { token: token.address, user: user1, amount: withdrawAmount.toString(), balance: balance.toString()})
+      })
+    })
+  
+    describe('Failure', () => {
+      it('rejects ether withdraw', async () => {
+        // withdraw
+        await exchange.withdrawToken(ADDRESS_0x0, withdrawAmount, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
+      })
+
+      it('rejects withdraw with insuffient balance', async () => {
+        // withdraw
+        await exchange.withdrawToken(token.address, 1000, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
+      })
+    })
+  })
+  })
+
+  describe('Create bet', () => {
+    let result
+    let amountTransfer = 30
+    let amountMaker = 10
+    let amountTaker = 8
+    let depositAmount = DEPOSIT
+
+    beforeEach(async () => {
+      amountTransfer = 30
+      // deposit
+      await token.approve(exchange.address, amountTransfer, { from: user1 })
+      await exchange.depositToken(token.address, amountTransfer, { from: user1 })
+    })
+
+    describe('Success', () => {
+      beforeEach(async ()=> {
+        result = await exchange.createBet(token.address, user2, amountMaker, amountTaker, { from: user1 })
+      })
+
+      it('bet created with _taker as user', async () => {
+        //result = await exchange.createBet(token.address, user2, amountMaker, amountTaker, { from: user1 })
+        const bet = await exchange.bets('1')
+        bet.id.toString().should.equal('1', 'id is correct')
+        bet.token.toString().should.equal(token.address.toString(), 'token address is correct')
+        bet.maker.toString().should.equal(user1.toString(), 'maker address is correct')
+        bet.taker.toString().should.equal(user2.toString(), 'taker address is correct')
+        bet.amountMaker.toString().should.equal(amountMaker.toString(), 'amount maker is correct')
+        bet.amountTaker.toString().should.equal(amountTaker.toString(), 'amount taker is correct')
+        bet.amountDeposit.toString().should.equal(DEPOSIT.toString(), 'amount deposit is correct')
+        bet.accepted.should.equal(false, 'accepted is correct')
+        bet.winnerMaker.toString().should.equal(ADDRESS_0x0, 'winner maker is 0x0')
+        bet.winnerTaker.toString().should.equal(ADDRESS_0x0, 'winner taker is 0x0')
+      })
+
+      it('emits a BetCreated event', async () => {
+        expectEvent(
+          result,
+          'BetCreated',
+          { id: '1',
+            token: token.address, 
+            maker: user1.toString(),
+            taker: user2.toString(),
+            amountMaker: amountMaker.toString(),
+            amountTaker: amountTaker.toString(),
+            depositAmount: DEPOSIT.toString(),
+            accepted: false,
+            winnerMaker: ADDRESS_0x0,
+            winnerTaker: ADDRESS_0x0
+          })
+      })
+
+      it('tracks contract balance', async () => {
+        balance = await exchange.tokens(token.address, exchange.address)
+        balance.toString().should.equal((amountMaker + depositAmount).toString())
+      })
+
+      it('tracks user balance', async () => {
+        balance = await exchange.tokens(token.address, user1)
+        balance.toString().should.equal((amountTransfer - (amountMaker + depositAmount)).toString())
+      })
+
+      it('bet created with _taker as 0x0', async () => {
+        result = await exchange.createBet(token.address, ADDRESS_0x0, amountMaker, amountTaker, { from: user1 })
+        const bet = await exchange.bets('2')
+        bet.id.toString().should.equal('2', 'id is correct')
+        bet.token.toString().should.equal(token.address.toString(), 'token address is correct')
+        bet.maker.toString().should.equal(user1.toString(), 'maker address is correct')
+        bet.taker.toString().should.equal(ADDRESS_0x0, 'taker address is 0x0')
+        bet.amountMaker.toString().should.equal(amountMaker.toString(), 'amount maker is correct')
+        bet.amountTaker.toString().should.equal(amountTaker.toString(), 'amount taker is correct')
+        bet.amountDeposit.toString().should.equal(DEPOSIT.toString(), 'amount deposit is correct')
+        bet.accepted.should.equal(false, 'accepted is correct')
+        bet.winnerMaker.toString().should.equal(ADDRESS_0x0, 'winner maker is 0x0')
+        bet.winnerTaker.toString().should.equal(ADDRESS_0x0, 'winner taker is 0x0')
+      })
+    })
+  
+    describe('Failure', () => {
+      it('rejects if taker address is sender address', async () => {
+        await exchange.createBet(token.address, user1, amountMaker, amountTaker, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
+      })
+
+      it('rejects if insufficient balance', async () => {
+        await exchange.createBet(token.address, user2, '1000', amountTaker, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
       })
     })
   })
