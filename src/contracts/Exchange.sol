@@ -23,6 +23,8 @@ contract Exchange is Ownable {
   event BetCreated(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
   event BetCancelled(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
   event BetAccepted(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
+  event WinnerSubmitted(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
+  event BetClosed(uint256 id, address token, address maker, address taker, uint256 amountMaker, uint256 amountTaker, uint256 depositAmount, bool accepted, address winnerMaker, address winnerTaker, uint256 timestamp);
 
   struct _Bet {
     uint256 id;
@@ -106,5 +108,44 @@ contract Exchange is Ownable {
     tokens[_bet.token][address(this)] += (_bet.amountTaker + _bet.amountDeposit);
     accepted[_id] = true;
     emit BetAccepted(_bet.id, _bet.token, _bet.maker, msg.sender, _bet.amountMaker, _bet.amountTaker, _bet.amountDeposit, _bet.accepted, _bet.winnerMaker, _bet.winnerTaker, block.timestamp);
+  }
+
+  function submitWinner(uint256 _id, address _winner) public {
+    _Bet storage _bet = bets[_id];
+    require(_id == _bet.id, 'bet does not exist');
+    require(cancelled[_id] == false, 'bet already cancelled');
+    require(accepted[_id] == true, 'bet not accepted yet');
+    require(closed[_id] == false, 'bet already closed');
+    require(_bet.maker == msg.sender || _bet.taker == msg.sender, 'sender is not maker or taker');
+
+    if (msg.sender == _bet.maker) {
+      _bet.winnerMaker = _winner;
+    }
+
+    if (msg.sender == _bet.taker) {
+      _bet.winnerTaker = _winner;
+    }
+
+    emit WinnerSubmitted(_bet.id, _bet.token, _bet.maker, _bet.taker, _bet.amountMaker, _bet.amountTaker, _bet.amountDeposit, _bet.accepted, _bet.winnerMaker, _bet.winnerTaker, block.timestamp);
+
+    if (_bet.winnerMaker != ADDRESS_0X0 && _bet.winnerTaker != ADDRESS_0X0 && _bet.winnerMaker == _bet.winnerTaker) {
+      _closeBet(_id);
+    }
+  }
+
+  function _closeBet(uint256 _id) private {
+    _Bet storage _bet = bets[_id];
+    tokens[_bet.token][address(this)] -= (_bet.amountMaker + _bet.amountTaker + (_bet.amountDeposit * 2));
+    closed[_id] = true;
+
+    if (_bet.maker == _bet.winnerTaker) {
+      tokens[_bet.token][_bet.maker] += (_bet.amountMaker + _bet.amountTaker + _bet.amountDeposit);
+      tokens[_bet.token][_bet.taker] += _bet.amountDeposit;
+    } else {
+      tokens[_bet.token][_bet.maker] += _bet.amountDeposit;
+      tokens[_bet.token][_bet.taker] += (_bet.amountMaker + _bet.amountTaker + _bet.amountDeposit);
+    } 
+
+    emit BetClosed(_bet.id, _bet.token, _bet.maker, _bet.taker, _bet.amountMaker, _bet.amountTaker, _bet.amountDeposit, _bet.accepted, _bet.winnerMaker, _bet.winnerTaker, block.timestamp);
   }
 }

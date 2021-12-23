@@ -420,4 +420,164 @@ contract('Exchange', ([deployer, user1, user2, user3]) => {
       })
     })
   })
+
+  describe('Submit winner', () => {
+    let result
+    const amountTransferUser1 = 30
+    const amountTransferUser2 = 40
+    const amountMaker = 10
+    const amountTaker = 8
+    const winner = user1
+
+    beforeEach(async () => {
+      await token.approve(exchange.address, amountTransferUser1, { from: user1 })
+      await token.approve(exchange.address, amountTransferUser2, { from: user2 })
+      
+      await exchange.depositToken(token.address, amountTransferUser1, { from: user1 })
+      await exchange.depositToken(token.address, amountTransferUser2, { from: user2 })
+      
+      await exchange.createBet(token.address, user2, amountMaker, amountTaker, { from: user1 })
+      await exchange.acceptBet('1', { from: user2 })
+    })
+
+    describe('Success - maker set winner', () => {
+      beforeEach(async () => {
+        result = await exchange.submitWinner('1', winner, { from: user1 })
+      })
+
+      it('winnerMaker set correctly', async () => {
+        const bet = await exchange.bets('1')
+        bet.id.toString().should.equal('1', 'id is correct')
+        bet.token.toString().should.equal(token.address.toString(), 'token address is correct')
+        bet.maker.toString().should.equal(user1.toString(), 'maker address is correct')
+        bet.taker.toString().should.equal(user2.toString(), 'taker address is correct')
+        bet.amountMaker.toString().should.equal(amountMaker.toString(), 'amount maker is correct')
+        bet.amountTaker.toString().should.equal(amountTaker.toString(), 'amount taker is correct')
+        bet.amountDeposit.toString().should.equal(DEPOSIT.toString(), 'amount deposit is correct')
+        bet.winnerMaker.toString().should.equal(winner.toString(), 'winner maker is user1')
+        bet.winnerTaker.toString().should.equal(ADDRESS_0x0, 'winner taker is 0x0')
+      })
+
+      it('emits a WinnerSubmitted event for winnerMaker', async () => {
+        expectEvent(
+          result,
+          'WinnerSubmitted',
+          { id: '1',
+            token: token.address, 
+            maker: user1.toString(),
+            taker: user2.toString(),
+            amountMaker: amountMaker.toString(),
+            amountTaker: amountTaker.toString(),
+            depositAmount: DEPOSIT.toString(),
+            winnerMaker: winner.toString(),
+            winnerTaker: ADDRESS_0x0
+          })
+      })
+    })
+
+    describe('Success - taker set winner', () => {
+      beforeEach(async () => {
+        result = await exchange.submitWinner('1', winner, { from: user2 })
+      })
+
+      it('winnerTaker set correctly', async () => {
+        const bet = await exchange.bets('1')
+        bet.id.toString().should.equal('1', 'id is correct')
+        bet.token.toString().should.equal(token.address.toString(), 'token address is correct')
+        bet.maker.toString().should.equal(user1.toString(), 'maker address is correct')
+        bet.taker.toString().should.equal(user2.toString(), 'taker address is correct')
+        bet.amountMaker.toString().should.equal(amountMaker.toString(), 'amount maker is correct')
+        bet.amountTaker.toString().should.equal(amountTaker.toString(), 'amount taker is correct')
+        bet.amountDeposit.toString().should.equal(DEPOSIT.toString(), 'amount deposit is correct')
+        bet.winnerMaker.toString().should.equal(ADDRESS_0x0, 'winner maker is 0x0')
+        bet.winnerTaker.toString().should.equal(winner.toString(), 'winner taker is user1')
+      })
+
+      it('emits a WinnerSubmitted event for set winnerTaker', async () => {
+        expectEvent(
+          result,
+          'WinnerSubmitted',
+          { id: '1',
+            token: token.address, 
+            maker: user1.toString(),
+            taker: user2.toString(),
+            amountMaker: amountMaker.toString(),
+            amountTaker: amountTaker.toString(),
+            depositAmount: DEPOSIT.toString(),
+            winnerMaker: ADDRESS_0x0,
+            winnerTaker: winner.toString()
+          })
+      })
+    })
+
+    describe('Success - maker set, taker set, close bet', () => {
+      beforeEach(async () => {
+        await exchange.submitWinner('1', winner, { from: user2 })
+        result = await exchange.submitWinner('1', winner, { from: user1 })
+      })
+
+      it('bet closed mapping updated', async () => {
+        const betClosedStatus = await exchange.closed('1')
+        betClosedStatus.should.equal(true, 'status is correct')
+      })
+
+      it('emits a BetClosed event for set winnerTaker', async () => {
+        expectEvent(
+          result,
+          'BetClosed',
+          { id: '1',
+            token: token.address, 
+            maker: user1.toString(),
+            taker: user2.toString(),
+            amountMaker: amountMaker.toString(),
+            amountTaker: amountTaker.toString(),
+            depositAmount: DEPOSIT.toString(),
+            winnerMaker: winner.toString(),
+            winnerTaker: winner.toString()
+          })
+      })
+
+      it('tracks contract balance', async () => {
+        balance = await exchange.tokens(token.address, exchange.address)
+        balance.toString().should.equal('0', 'contract balance is correct')
+      })
+
+      it('tracks winner balance', async () => {
+        balance = await exchange.tokens(token.address, winner)
+        balance.toString().should.equal((amountTransferUser1 + amountTaker).toString(), 'winner balance is correct')
+      })
+
+      it('tracks loser balance', async () => {
+        balance = await exchange.tokens(token.address, user2)
+        balance.toString().should.equal((amountTransferUser2 - amountTaker).toString(), 'loser balance is correct')
+      })
+    })
+
+    describe('Failure', () => {
+      it('rejects if id does not exist', async () => {
+        result = await exchange.submitWinner('100', user2, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
+      })
+
+      it('rejects if not accepted', async () => {
+        await exchange.createBet(token.address, user2, '1', '1', { from: user1 })
+        result = await exchange.submitWinner('2', user2, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
+      })
+
+      it('rejects if already cancelled', async () => {
+        await exchange.createBet(token.address, user2, '1', '1', { from: user1 })
+        await exchange.cancelBet('2', { from: user1 })
+        result = await exchange.submitWinner('2', user2, { from: user2 }).should.be.rejectedWith(EVM_REVERT)
+      })
+
+      it('rejects if bet already closed', async () => {
+        await exchange.submitWinner('1', winner, { from: user1 })
+        await exchange.submitWinner('1', winner, { from: user2 })
+        result = await exchange.submitWinner('1', winner, { from: user1 }).should.be.rejectedWith(EVM_REVERT)
+      })
+
+      it('rejects if sender not maker or taker', async () => {
+        result = await exchange.submitWinner('1', user2, { from: user3 }).should.be.rejectedWith(EVM_REVERT)
+      })
+    })
+  })
 })
